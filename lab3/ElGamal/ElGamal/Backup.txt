@@ -1,0 +1,398 @@
+﻿using Microsoft.Win32;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Navigation;
+using System.Windows.Shapes;
+
+namespace ElGamal
+{
+    /// <summary>
+    /// Interaction logic for MainWindow.xaml
+    /// </summary>
+    public partial class MainWindow : Window
+    {
+        ElGamal el = new ElGamal();
+        public string message_text { get; set; } = "";
+        public string cipher_text { get; set; } = "";
+        public byte[]? message_bytes = null;
+        public byte[]? cipher_bytes = null;
+        private HashSet<int> prime_numbers = new HashSet<int>() { 
+            2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97,
+            101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199,
+            211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293,
+            307, 311, 313, 317, 331, 337, 347, 349, 353, 359, 367, 373, 379, 383, 389, 397,
+            401, 409, 419, 421, 431, 433, 439, 443, 449, 457, 461, 463, 467, 479, 487, 491, 499,
+            503, 509, 521, 523, 541, 547, 557, 563, 569, 571, 577, 587, 593, 599,
+            601, 607, 613, 617, 619, 631, 641, 643, 647, 653, 659, 661, 673, 677, 683, 691,
+            701, 709, 719, 727, 733, 739, 743, 751, 757, 761, 769, 773, 787, 797,
+            809, 811, 821, 823, 827, 829, 839, 853, 857, 859, 863, 877, 881, 883, 887,
+             907, 911, 919, 929, 937, 941, 947, 953, 967, 971, 977, 983, 991, 997,
+        };
+        int p, x, k, y, a, b, g;
+        private List<int> g_list = new List<int>();
+        private int block_size = 2;
+
+        /// <summary>
+        /// Check if number is prime
+        /// </summary>
+        /// <param name="num"></param>
+        /// <returns></returns>
+        private bool IsPrimeNumber(int num)
+        {
+            for(int i = 2; i * i <= num; i++)
+            {
+                if (num % i == 0)
+                    return false;
+            }
+            return true;
+        }
+        /// <summary>
+        /// x^z mod m = ?
+        /// </summary>
+        /// <returns></returns>
+        private int PowMod(int x, int z, int m)
+        {
+            int res = 1;
+            while(z != 0)
+            {
+                while(z % 2 == 0)
+                {
+                    z >>= 1; //z = z div 2
+                    x = (x * x) % m;
+                }
+                z = z - 1;
+                res = (res * x) % m;
+            }
+            return res;
+        }
+        private int[] Factorization(int p)
+        {
+            List<int> factorization = new List<int>();
+            int n = p;
+            for (int i = 2; i * i <= n; i++)
+            {
+                if (n % i == 0)
+                {
+                    factorization.Add(i);
+                    while (n % i == 0)
+                        n = n / i;
+                }
+            }
+            if (n > 1)
+                factorization.Add(n);
+            return factorization.ToArray();
+        }
+        private int[]? CountGRoots(int p)
+        {
+            int phi = CountEulerFunc(p);
+            int[] dividers = Factorization(phi);
+            List<int> g = new List<int>();
+            for(int i = 2; i <= p; i++)
+            {
+                bool IsOk = true;
+                for (int j = 0; j < dividers.Length; j++)
+                    IsOk &= PowMod(i, phi / dividers[j], p) != 1;
+                if (IsOk)
+                    g.Add(i);
+            }
+
+            return g.Count > 0 ? g.ToArray() : null;
+        }
+        private int GCD(int a, int b)
+        {
+            int res = 1;
+            int max = a > b ? a : b;
+            for (int i = 2; i * i <= max; i++)
+            {
+                while(a%i==0 && b%i==0)
+                {
+                    res = res * i;
+                    a /= i;
+                    b /= i;
+                }
+                while (a % i == 0)
+                    a = a / i;
+                while (b % i == 0)
+                    b = b / i;
+            }
+            return res;
+        }
+        private int CountEulerFunc(int p)
+        {
+            int result = p;
+            for (int i = 2; i * i <= p; i++)
+            {
+                if(p%i == 0)
+                {
+                    while (p % i == 0)
+                        p = p / i;
+                    result = result - result / i;
+                }    
+            }
+            if (p > 1)
+                result = result - result / p;
+            return result;
+        }
+        public MainWindow()
+        {
+            InitializeComponent();
+        }
+
+        private void btnOpen_Click(object sender, RoutedEventArgs e)
+        {
+            string FilePath = "";
+            OpenFileDialog openFileDialog = new OpenFileDialog();
+            if(openFileDialog.ShowDialog() == true)
+            {
+                FilePath = openFileDialog.FileName;
+               // message_text = File.ReadAllText(FilePath);   
+                message_bytes = File.ReadAllBytes(FilePath);
+                tbMessage.Text = GetSmallOutput(message_bytes);
+            }
+        }
+
+        private string GetSmallOutput(string mes)
+        {
+            if (mes.Length > 100)
+            {
+                StringBuilder str = new StringBuilder();
+                str.AppendLine(mes.Substring(0, 100));
+                str.AppendLine("------------");
+                str.AppendLine(mes.Substring(mes.Length - 100));
+                return str.ToString();
+            }
+            else
+                return mes;
+        }
+        private string GetSmallOutput(byte[] bytes)
+        {
+            const int OUTPUT_SIZE = 100;
+            StringBuilder res = new StringBuilder();
+            int len = bytes.Length;
+            if (len > OUTPUT_SIZE * 2)
+            {
+                for (int i = 0; i < len; i++)
+                {
+                    if (i < OUTPUT_SIZE || i > len - OUTPUT_SIZE)
+                        res.Append(bytes[i].ToString() + ",");
+                    else if (i == OUTPUT_SIZE)
+                        res.Append("\n--------------\n");
+                }
+            }
+            else
+            {
+                for (int i = 0; i < len / 2; i++)
+                    res.Append(bytes[i].ToString() + ",");
+                res.Append("\n-----------\n");
+                for (int i = len / 2; i < len; i++)
+                    res.Append(bytes[i].ToString() + ",");
+            }
+            return res.ToString();
+        }
+
+
+        private void btnSave_Click(object sender, RoutedEventArgs e)
+        {
+            string saveFilePath = "";
+            SaveFileDialog saveFileDialog = new SaveFileDialog();
+            if(saveFileDialog.ShowDialog() == true)
+            {
+                saveFilePath = saveFileDialog.FileName;
+                File.WriteAllBytes(saveFilePath, cipher_bytes);
+            }
+        }
+
+
+        /// <summary>
+        /// y = g^x mod p
+        /// </summary>
+        /// <param name="g"></param>
+        /// <param name="x"></param>
+        /// <param name="p"></param>
+        /// <returns></returns>
+        private int CountFunc(int g, int x, int p)
+        {
+            return PowMod(g, x,p);
+        }
+
+        private bool CipherBtnValidation()
+        {    
+            bool validation_flag = false;
+
+            if (!prime_numbers.Contains(p) && !IsPrimeNumber(p))
+                MessageBox.Show($"P number \"{p}\" is not prime number", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+            else if (p < 255)
+                MessageBox.Show($"P number \"{p}\" is less than bit size, it can lead to data loss", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+            else if (x >= p - 1 || x <= 1)
+                MessageBox.Show($"X number \"{x}\" is not correct", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            else if (k >= p - 1 || k <= 1)
+                MessageBox.Show($"K number \"{k}\" is not correct", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            else if (GCD(p - 1, k) != 1)
+                MessageBox.Show($"K number \"{k}\" doesn't satisfy condition: GCD(p-1,k) = 1", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            else if(message_bytes == null)
+                MessageBox.Show($"Please, choose the file for encription", "Warning", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+            else
+                validation_flag = true;
+
+            return validation_flag;
+        }
+        private void btnEncrypt_Click(object sender, RoutedEventArgs e)
+        {
+
+            if (CipherBtnValidation() && message_bytes != null)
+            {
+                y = CountFunc(g, x, p);
+                a = PowMod(g, k, p);
+                int bY = PowMod(y, k, p); //b = bY * (m % p);
+                int ind = 0;
+                cipher_bytes = new byte[message_bytes.Length * 2 * block_size];
+                tbCipher.Text = "";
+                foreach (byte m in message_bytes)
+                {
+                    byte[] bytes = GetBytes(a, block_size);
+                    for (int i = bytes.Length - 1; i >= 0; i--)
+                        cipher_bytes[ind++] = bytes[i];
+
+                    b = (bY * m) % p;
+
+                    bytes = GetBytes(b, block_size);
+                    for (int i = bytes.Length - 1; i >= 0; i--)
+                        cipher_bytes[ind++] = bytes[i];
+                    /*cipher_bytes[ind++] = (byte)(a >> 8);
+                    cipher_bytes[ind++] = (byte)a;        
+                    b = (bY * m) % p;
+                    cipher_bytes[ind++] = (byte)(b >> 8);
+                    cipher_bytes[ind++] = (byte)b;*/
+                }
+                //tbCipher.Text += $"p: {p}\ng: {g}\nx: {x}\nk: {k}\ny: {y}\na: {a}\nb: {b}\n";
+                tbCipher.Text += GetSmallOutput(cipher_bytes);
+            }
+        }
+
+        /// <summary>
+        /// Return array of bytes from Int value
+        /// 
+        /// </summary>
+        /// <param name="num"></param>
+        /// <param name="size"></param>
+        /// <returns>bytes[0] = 1-8bits, bytes[1] = 9-16[bits], bytes[2] = 17-24bits, bytes[3] = 25-32bits</returns>
+        private byte[] GetBytes(int num, int size)
+        {
+            byte[] bytes = new byte[size];
+            for (int i = 0; i < size; i++)
+            {
+                bytes[i] = (byte)num;
+                num >>= 8;
+            }
+            return bytes;
+        }
+
+        /// <summary>
+        /// m = (b/a^x) mod p
+        /// </summary>
+        /// <param name="m"></param>
+        private byte CountM(int phi)
+        {
+            int m = PowMod(a, x * (phi - 1), p);
+            m = b * m % p;
+            return (byte)m;
+        }
+        private void btnDecrypt_Click(object sender, RoutedEventArgs e)
+        {
+
+            if (CipherBtnValidation() && message_bytes != null)
+            {
+                y = CountFunc(g, x, p);
+                a = PowMod(g, k, p);
+                int phi = CountEulerFunc(p);
+                int ind = 0;
+                int deblock_size = 2 * block_size;
+                cipher_bytes = new byte[message_bytes.Length / deblock_size];
+                tbCipher.Text = "";
+                for (int i = 0; i < message_bytes.Length; i += deblock_size)
+                {
+                    b = 0;
+                    for (int j = block_size; j < deblock_size; j++)
+                    {
+                        b += message_bytes[i + j] << (8 * (deblock_size - 1 - j));
+                    }
+                    cipher_bytes[ind++] = CountM(phi);
+                }
+                //tbCipher.Text += $"p: {p}\ng: {g}\nx: {x}\nk: {k}\ny: {y}\na: {a}\nb: {b}\n";
+                tbCipher.Text += GetSmallOutput(cipher_bytes);
+
+            }
+        }
+
+        private void tbP_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            Int32.TryParse(tbP.Text, out p);
+            block_size = GetSize(p);
+            
+        }
+        private int GetSize(int p)
+        {
+            const uint one_byte_max = Byte.MaxValue;
+            const uint two_byte_max = UInt16.MaxValue;
+            const uint four_byte_max = UInt32.MaxValue;
+            return (uint)p switch
+            {
+                <= one_byte_max => 1,
+                <= two_byte_max => 2,
+                <= four_byte_max => 4
+            };
+        }
+
+        private void tbX_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            Int32.TryParse(tbX.Text, out x);
+        }
+        private void tbK_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            Int32.TryParse(tbK.Text, out k);
+        }
+        private void tbP_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            cbG.Items.Clear();
+            var g_roots = CountGRoots(p);
+            if (g_roots != null)
+            {
+                foreach (var root in g_roots)
+                {
+                    cbG.Items.Add(root);
+                    g_list.Add(root);
+                }
+            }
+        }
+
+
+        private void tbCipher_TextChanged(object sender, TextChangedEventArgs e)
+        {
+             cipher_text= tbCipher.Text;
+        }
+        private void tbMessage_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            message_text = tbCipher.Text;
+        }
+
+        private void cbG_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            try
+            {
+                g = g_list[cbG.SelectedIndex];
+            }
+            catch { }
+        }
+    }
+}
